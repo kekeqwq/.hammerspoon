@@ -1,3 +1,60 @@
+-- Init
+-- 自动重载配置
+function reloadConfig(files)
+	doReload = false
+	for _, file in pairs(files) do
+		if file:sub(-4) == ".lua" then
+			doReload = true
+		end
+	end
+	if doReload then
+		hs.reload()
+	end
+end
+myWatcher = hs.pathwatcher.new(os.getenv("HOME") .. "/.hammerspoon/", reloadConfig):start()
+
+---End
+
+-- Input method Manager
+
+-- 1. 定义 ID
+local LANG_ABC = "com.apple.keylayout.ABC"
+local LANG_RIME = "im.rime.inputmethod.Squirrel.Hans"
+
+-- 2. 定义 App 规则
+local app_rules = {
+	["WezTerm"] = LANG_ABC,
+	["Emacs"] = LANG_ABC,
+	["WeChat"] = LANG_RIME,
+	["微信"] = LANG_RIME,
+}
+
+-- 3. 核心切换函数
+local function switchInput(appName)
+	local target = app_rules[appName]
+	if target and hs.keycodes.currentSourceID() ~= target then
+		hs.keycodes.currentSourceID(target)
+	end
+end
+
+-- 【改进版】监听窗口焦点变化：处理鼠标点击、Command+Tab、Dock点击等所有行为
+wf = hs.window.filter.new(nil)
+wf:subscribe(hs.window.filter.windowFocused, function(window)
+	local appName = window:application():name()
+	switchInput(appName)
+end)
+
+-- 4. 暴力劫持 Cmd + Space (保留你最满意的 Raycast 方案)
+hs.hotkey.bind({ "cmd" }, "space", function()
+	hs.keycodes.currentSourceID(LANG_ABC)
+	hs.timer.doAfter(0.01, function()
+		-- 这里的快捷键需与你在 Raycast 设置里的一致
+		hs.eventtap.keyStroke({ "ctrl", "alt", "cmd", "shift" }, "space")
+	end)
+end)
+
+-- ENd
+
 hs.hotkey.bind({ "cmd", "ctrl" }, "C", function()
 	-- 0. 先清空剪贴板，防止读到旧内容
 	hs.pasteboard.clearContents()
@@ -38,7 +95,7 @@ hs.hotkey.bind({ "cmd", "ctrl" }, "C", function()
         ]])
 
 		-- 调用系统 open 指令启动 Chrome
-		hs.task.new("/usr/bin/open", nil, { "-b", "com.google.Chrome", url }):start()
+		hs.task.new("/usr/bin/open", nil, { "-b", "com.google.Chrome.canary", url }):start()
 		hs.alert.show("💖 迁移成功: " .. url)
 	else
 		-- 错误排查提示
