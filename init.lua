@@ -15,6 +15,170 @@ myWatcher = hs.pathwatcher.new(os.getenv("HOME") .. "/.hammerspoon/", reloadConf
 
 ---End
 
+-- ==========================================
+-- 1. 自定义“粉嘟嘟果冻”提示 (修复居中与透明度)
+-- ==========================================
+local alertCanvas = hs.canvas.new({ x = 0, y = 0, w = 0, h = 0 })
+
+local function showPinkAlert(text, duration)
+	if not text or text == "" then
+		return
+	end
+
+	local paddingW = 60 -- 增加左右留白
+	local paddingH = 30 -- 增加上下留白
+	local fontSize = 26
+	local screen = hs.screen.mainScreen():frame()
+
+	-- 计算文字实际大小
+	local textSize =
+		hs.drawing.getTextDrawingSize("🌸 " .. text .. " 🌸", { font = ".AppleSystemUIFont", size = fontSize })
+	local canvasW = textSize.w + paddingW
+	local canvasH = textSize.h + paddingH
+
+	-- 重新构建画布内容
+	alertCanvas[1] = { -- 背景：调低了 alpha 到 0.75，更显通透
+		type = "rectangle",
+		action = "fill",
+		fillColor = { red = 1, green = 0.55, blue = 0.7, alpha = 0.75 },
+		roundedRectRadii = { xRadius = canvasH / 2, yRadius = canvasH / 2 }, -- 胶囊形状
+	}
+	alertCanvas[2] = { -- 文字：确保在画布内绝对居中
+		type = "text",
+		text = "🌸 " .. text .. " 🌸",
+		textSize = fontSize,
+		textColor = { white = 1, alpha = 1 },
+		textAlignment = "center",
+		frame = { x = 0, y = (paddingH / 2) - 2, w = "100%", h = "100%" }, -- 微调 y 偏置实现垂直居中
+	}
+
+	-- 居中显示画布
+	alertCanvas:frame({
+		x = (screen.w - canvasW) / 2,
+		y = (screen.h - canvasH) / 2,
+		w = canvasW,
+		h = canvasH,
+	})
+
+	alertCanvas:show()
+
+	if _G.pinkAlertTimer then
+		_G.pinkAlertTimer:stop()
+	end
+	_G.pinkAlertTimer = hs.timer.doAfter(duration or 1.2, function()
+		alertCanvas:hide(0.3) -- 增加一个简单的淡出效果
+	end)
+end
+
+-- ==========================================
+-- 2. 窗口切换核心逻辑 (保持之前稳定的版本)
+-- ==========================================
+local switcher = {
+	allWindows = {},
+	index = 0,
+	isActive = false,
+	isMouseDown = false,
+	keyTap = nil,
+	mouseTap = nil,
+	modifierTap = nil,
+}
+
+-- 监听鼠标状态
+switcher.mouseTap = hs.eventtap
+	.new({ hs.eventtap.event.types.leftMouseDown, hs.eventtap.event.types.leftMouseUp }, function(event)
+		switcher.isMouseDown = (event:getType() == hs.eventtap.event.types.leftMouseDown)
+		return false
+	end)
+	:start()
+
+-- 获取目标窗口
+local function getTargetWindows(mouseDown)
+	local rawWindows = hs.window.orderedWindows()
+	local filtered = {}
+	local targetAppName = nil
+
+	if mouseDown then
+		local mousePos = hs.mouse.absolutePosition()
+		for _, win in ipairs(rawWindows) do
+			local frame = win:frame()
+			if
+				frame
+				and mousePos.x >= frame.x
+				and mousePos.x <= (frame.x + frame.w)
+				and mousePos.y >= frame.y
+				and mousePos.y <= (frame.y + frame.h)
+			then
+				local app = win:application()
+				if app and win:isStandard() then
+					targetAppName = app:name()
+					break
+				end
+			end
+		end
+	end
+
+	if targetAppName then
+		for _, win in ipairs(rawWindows) do
+			local app = win:application()
+			if app and app:name() == targetAppName and win:isStandard() and win:isVisible() then
+				table.insert(filtered, win)
+			end
+		end
+		showPinkAlert(targetAppName, 1.2) -- 触发自定义提示
+	else
+		local seenApps = {}
+		for _, win in ipairs(rawWindows) do
+			local app = win:application()
+			if app and win:isStandard() and win:isVisible() and not win:isMinimized() then
+				local name = app:name()
+				if name and not seenApps[name] then
+					table.insert(filtered, win)
+					seenApps[name] = true
+				end
+			end
+		end
+	end
+	return filtered
+end
+
+-- 键盘拦截
+switcher.keyTap = hs.eventtap
+	.new({ hs.eventtap.event.types.keyDown }, function(event)
+		local flags = event:getFlags()
+		local keyCode = event:getKeyCode()
+
+		if flags.cmd and keyCode == 48 then
+			if not switcher.isActive then
+				switcher.allWindows = getTargetWindows(switcher.isMouseDown)
+				switcher.index = 1
+				switcher.isActive = true
+			end
+			if #switcher.allWindows > 1 then
+				switcher.index = (switcher.index % #switcher.allWindows) + 1
+				local targetWin = switcher.allWindows[switcher.index]
+				if targetWin then
+					targetWin:focus()
+				end
+			end
+			return true
+		end
+		return false
+	end)
+	:start()
+
+-- 释放重置
+switcher.modifierTap = hs.eventtap
+	.new({ hs.eventtap.event.types.flagsChanged }, function(event)
+		local flags = event:getFlags()
+		if not flags.cmd and switcher.isActive then
+			switcher.isActive = false
+			switcher.index = 0
+			switcher.allWindows = {}
+		end
+		return false
+	end)
+	:start()
+
 -- Input method Manager
 
 -- 1. 定义 ID
