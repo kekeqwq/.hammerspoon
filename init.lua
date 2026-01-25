@@ -100,8 +100,6 @@ keyDownWatcher = hs.eventtap
 	end)
 	:start()
 
-hs.alert.show("Hammerspoon: 单击 Cmd 唤起模式已就绪")
-
 -- ENd
 
 hs.hotkey.bind({ "cmd", "ctrl" }, "C", function()
