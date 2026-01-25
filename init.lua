@@ -45,13 +45,62 @@ wf:subscribe(hs.window.filter.windowFocused, function(window)
 end)
 
 -- 4. 暴力劫持 Cmd + Space (保留你最满意的 Raycast 方案)
-hs.hotkey.bind({ "cmd" }, "space", function()
+-- --- 单击 Cmd 唤起 Raycast 逻辑 ---
+
+local sendCmdSpace = function()
+	-- 1. 先切输入法
 	hs.keycodes.currentSourceID(LANG_ABC)
+	-- 2. 模拟你之前设置的 Raycast 复杂快捷键
 	hs.timer.doAfter(0.01, function()
-		-- 这里的快捷键需与你在 Raycast 设置里的一致
 		hs.eventtap.keyStroke({ "ctrl", "alt", "cmd", "shift" }, "space")
 	end)
-end)
+end
+
+local lastModifiers = {}
+local cmdDownTime = 0
+local cmdTapSuccess = false
+
+-- 监听修饰键变化
+cmdWatcher = hs.eventtap
+	.new({ hs.eventtap.event.types.flagsChanged }, function(event)
+		local modifiers = event:getFlags()
+		local keyCode = event:getKeyCode()
+
+		-- 检查是否只有 Cmd 被按下 (Left Cmd: 55, Right Cmd: 54)
+		if keyCode == 55 or keyCode == 54 then
+			if modifiers.cmd and not (modifiers.alt or modifiers.shift or modifiers.ctrl or modifiers.fn) then
+				-- Cmd 按下
+				cmdDownTime = hs.timer.secondsSinceEpoch()
+				cmdTapSuccess = true -- 先假设它会成功
+			elseif not modifiers.cmd and cmdTapSuccess then
+				-- Cmd 放开
+				local duration = hs.timer.secondsSinceEpoch() - cmdDownTime
+				-- 如果按下到放开的时间小于 0.3 秒，则视为单击
+				if duration < 0.3 then
+					sendCmdSpace()
+				end
+				cmdTapSuccess = false
+			end
+		else
+			-- 如果按下了其他修饰键，取消判定
+			cmdTapSuccess = false
+		end
+		return false
+	end)
+	:start()
+
+-- 监听普通按键按下
+-- 如果在 Cmd 按住期间按了任何字母/数字键，立即取消单击判定
+keyDownWatcher = hs.eventtap
+	.new({ hs.eventtap.event.types.keyDown }, function(event)
+		if cmdTapSuccess then
+			cmdTapSuccess = false
+		end
+		return false
+	end)
+	:start()
+
+hs.alert.show("Hammerspoon: 单击 Cmd 唤起模式已就绪")
 
 -- ENd
 
